@@ -4,6 +4,8 @@
 
 MSF 的日志不是"一个日志"，而是**四个独立维度**。用错一个就会得出相反结论——最常见的错误是拿 MosDNS 的 `connection ctx canceled` 当成故障，或者拿 Mihomo 的 `i/o timeout` 当成节点挂了。
 
+> 本文只负责**找到日志、分清是哪一个**。判断"某条 WARN 要不要修、怎么有据地修"，看 [`log-triage.md`](log-triage.md)。
+
 ## 总览
 
 | # | 日志 | 位置 | WebUI 路径 | 内容 |

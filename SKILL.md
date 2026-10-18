@@ -42,10 +42,33 @@ MSF **自己不转发流量、不解析域名**——所以"面板正常"不等�
 
 ## 何时使用
 
+- **用户贴了日志、或问"日志里这些错误是什么 / 要不要修"** ← 最高频入口，见下方「日志分诊」
 - 局域网设备断网、能连内网但打不开外网、DNS 解析异常
 - 代理节点连不上、测速失败、订阅不更新、规则不生效
 - 想对 MSF 配置做体检、找优化点、判断某项配置是否合理
 - 需要定位「解析到了 fake-IP 但流量没进代理」这类链路断裂
+
+## 日志分诊（本 skill 的核心用途）
+
+**核心立场：不是所有 WARN 都要修。** 正常运行中的 MSF 每天几千条 WARN 是常态，其中大部分是客户端行为、目标侧问题或已恢复的历史事件。改错配置的代价远大于忽略一条警告。
+
+只有同时满足三条才进入修复：**仍在发生** + **有可观测影响** + **根因已定位且有证据**。缺一条就只报告，不动手。
+
+```bash
+bash scripts/log-triage.sh <host>     # 只读：归一化聚合 + 时间窗对比
+```
+
+判据：
+
+| 时间窗表现 | 含义 |
+|---|---|
+| 1h 与 24h 都排前列 | 仍在发生，值得归因 |
+| 仅 24h 出现、1h 无 | **已恢复，不要动配置** |
+| 分散且低频 | 通常是客户端行为噪音 |
+
+然后对每个仍在发生的签名回答**归因五问**：谁发起的 → 目标是什么 → 命中哪条规则 → 失败在哪一层 → 持续还是已恢复。五问答不上来就是证据不足，**不允许修**。
+
+完整签名目录、决策矩阵、真实案例见 [`references/log-triage.md`](references/log-triage.md)。
 
 ## 何时不要用
 
@@ -131,11 +154,13 @@ curl -s http://<host>:7777/api/v1/setup/privilege   # 返回 is_root / docker / 
 
 | 文件 | 内容 |
 |---|---|
-| `references/integration.md` | **三方联动全链路、端口全景、开关表、不能改的常量** |
-| `references/environment.md` | 部署形态判定、数据目录、能力差异 |
+| `references/log-triage.md` | **日志分诊方法、真实签名目录、决策矩阵、有据修复协议** |
+| `references/incidents.md` | **实战案例库（现象→取证→根因→处置→教训）** |
+| `references/integration.md` | 三方联动全链路、端口全景、开关表、不能改的常量 |
+| `references/environment.md` | 部署形态判定、数据目录、CLI、能力差异 |
 | `references/credentials.md` | 首次配置、凭据分层、作用域限制 |
 | `references/api-map.md` | API 端点按 T1–T4 分层 + 作用域要求 |
-| `references/logs.md` | 四类日志的区分与归因 |
+| `references/logs.md` | 四类日志的来源与定位（找日志看这篇） |
 | `references/troubleshooting.md` | 故障 → 定位 → 处置手册（11 个场景） |
 | `references/config-audit.md` | 配置体检项与判定阈值 |
 | `references/router-integration.md` | 主路由 DHCP 与静态路由前置条件 |

@@ -132,12 +132,30 @@ powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1
 
 ### 知识与流程
 
-- 四类日志的区分与归因（含"看着像故障其实不是"的清单）
+- **日志分诊**：把海量 WARN 归一化成签名，按时间窗区分「仍在发生 / 已恢复」，只修该修的
+- **有据修复**：归因五问 + 取证固定动作，答不出证据就不允许改
+- 四类日志的区分与定位（含"看着像故障其实不是"的清单）
 - fake-IP / TProxy / nftables 链路断层定位
 - 订阅、代理组、节点异常判断
 - 配置体检：资源、上游冗余、缓存容量、参数一致性、安全暴露面
 - 主路由接入核查（DHCP DNS、fake-IP 静态路由、IPv6 陷阱）
 - 部署形态判定矩阵
+
+### 日志分诊流程
+
+```bash
+bash scripts/log-triage.sh <host>
+```
+
+输出每个日志源在**最近 1 小时**与**最近 24 小时**的签名排行，并给出重启痕迹。判据：
+
+| 时间窗表现 | 含义 | 动作 |
+|---|---|---|
+| 1h 与 24h 都排前列 | 仍在发生 | 归因后决定是否修 |
+| 仅 24h 出现、1h 无 | 已恢复 | **不要动配置** |
+| 分散且低频 | 客户端行为噪音 | 不处理 |
+
+核心立场：**不是所有 WARN 都要修。** 只有「仍在发生 + 有可观测影响 + 根因有证据」三条同时成立才动手。
 
 ## 不做什么
 
@@ -152,7 +170,7 @@ powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1
 
 上游有约 **386 条** API 路由，本 skill 按"日常真正会用到"的原则覆盖了约 80 条，其余通过 WebUI 操作即可。
 
-**已覆盖**：部署形态与数据目录、CLI、端口全景、三方联动链路、四类日志、11 类故障场景、配置体检、主路由接入、凭据分层、危险区清单。
+**已覆盖**：日志分诊与有据修复、部署形态与数据目录、CLI、端口全景、三方联动链路、四类日志定位、11 类故障场景、配置体检、主路由接入、凭据分层、危险区清单。
 
 **尚未覆盖**（知道有缺口，比假装齐全更可靠）：
 
@@ -176,19 +194,22 @@ powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1
 
 ```
 msf-skill/
-├── SKILL.md                      入口：触发条件 / 三方分工 / 安全契约 / 决策树
+├── SKILL.md                      入口：触发条件 / 日志分诊 / 三方分工 / 安全契约
 ├── references/
+│   ├── log-triage.md             日志分诊方法、真实签名目录、决策矩阵、有据修复协议
+│   ├── incidents.md              实战案例库（现象→取证→根因→处置→教训）
 │   ├── integration.md            三方联动全链路、端口全景、开关表、不可改常量
-│   ├── environment.md            部署形态判定矩阵与数据目录
+│   ├── environment.md            部署形态判定矩阵、数据目录、CLI
 │   ├── credentials.md            首次配置与凭据分层
 │   ├── api-map.md                API 端点按 T1–T4 分层
-│   ├── logs.md                   四类日志
+│   ├── logs.md                   四类日志的来源与定位
 │   ├── troubleshooting.md        故障手册（11 个场景）
 │   ├── config-audit.md           配置体检
 │   ├── router-integration.md     主路由接入
 │   └── dangerous.md              T4 危险操作
 ├── scripts/
 │   ├── bootstrap.sh / .ps1       首次配置
+│   ├── log-triage.sh             日志分诊（只读）
 │   └── msf-health.sh / .ps1      只读快照
 └── .github/workflows/validate.yml
 ```
