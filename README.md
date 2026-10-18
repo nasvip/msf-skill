@@ -145,7 +145,12 @@ powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1
 
 ```bash
 bash scripts/log-triage.sh <host>
+
+# 平稳运行时建一次基线，之后每次都自动标出突增
+bash scripts/log-triage.sh <host> --baseline-save
 ```
+
+输出：仍在发生 / 仅 24 小时（已恢复）/ 与基线对比（`NEW` `xN` `GONE`）/ 平台与重启痕迹 / DNS 审计（命中分布、客户端查询量、最慢查询、非 NOERROR 采样）。
 
 输出每个日志源在**最近 1 小时**与**最近 24 小时**的签名排行，并给出重启痕迹。判据：
 

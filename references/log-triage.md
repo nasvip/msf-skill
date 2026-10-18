@@ -26,13 +26,58 @@
 bash scripts/log-triage.sh <host>
 ```
 
-它会输出：
-- Mihomo 最近 1 小时 / 24 小时的签名 TOP 列表
-- MosDNS 最近 1 小时 / 24 小时的签名 TOP 列表
-- MSF 平台 error/warn 计数
-- 重启痕迹（mosdns 终止信号数、mihomo 启动数、systemd 重启数）
+输出四块：
 
-也可以手动做：
+| 区块 | 内容 |
+|---|---|
+| 仍在发生 | 最近 1 小时窗口内仍出现的签名，按频次排序 |
+| 仅 24 小时 | 24 小时出现过、1 小时已无 —— **已恢复，不要动** |
+| 与基线对比 | 相比历史基线的 `NEW` / `xN` 突增 / `GONE` 消失 |
+| 平台与重启 | MSF error/warn 计数、MosDNS 终止次数、Mihomo 启动次数、systemd 重启次数、MosDNS 启动时间 |
+| DNS 审计 | 命中分布（domain_set）、客户端查询量、最慢查询、非 NOERROR 采样 |
+
+### 基线机制
+
+单看"现在有多少"没有意义，要看"比平时多了多少"。
+
+```bash
+bash scripts/log-triage.sh <host> --baseline-save   # 把当前分布存为基线
+bash scripts/log-triage.sh <host>                   # 之后每次自动对比
+bash scripts/log-triage.sh <host> --no-baseline     # 本次跳过对比
+bash scripts/log-triage.sh <host> --no-audit        # 跳过 DNS 审计（省时间）
+```
+
+基线存于 `~/.config/msf-skill/baseline.tsv`。**建议在系统运行平稳时建一次**，之后每次分诊都会标出：
+
+| 标记 | 含义 |
+|---|---|
+| `NEW` | 基线里没有、现在 24h ≥ 5 次 —— 新出现的问题 |
+| `x2.0+` | 相比基线翻倍以上且 ≥ 5 次 —— 突增 |
+| `GONE` | 基线里有、现在消失 —— 已恢复或已下线 |
+
+阈值（≥5 次、×2）是为了滤掉低频抖动；如环境本身噪音大，可在脚本里调整。
+
+### DNS 审计维度
+
+除了文本日志，MosDNS 的审计缓冲能回答"解析到底命中哪条规则"：
+
+```bash
+curl -s 'http://<host>:9099/api/v2/audit/rank/domain_set'
+curl -s 'http://<host>:9099/api/v2/audit/rank/client'
+curl -s 'http://<host>:9099/api/v2/audit/rank/slowest'
+```
+
+`domain_set` 的分布很能说明问题：
+
+- `白名单` 占绝大多数 → 正常（大部分流量是直连）
+- `unmatched_rule` 偏高 → 分流规则覆盖不足，大量域名落到兜底
+- `未命中` / `BANHTTPS` 异常升高 → 规则或开关最近被改过
+
+最慢查询持续停在 `~5000 ms` 是**上游超时的封顶值**（例如 `5s` 超时），不是真的有查询跑了 5000 秒。
+
+审计缓冲是环形内存（默认 10 万条），超出后最旧的被丢弃；`rank/*` 是对当前缓冲的整体统计，**不是时间窗内的**。
+
+也可以手动做聚合：
 
 ```bash
 # Mihomo：按「组 → 目标 → 错误类别」聚合
