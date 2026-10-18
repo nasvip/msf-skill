@@ -68,35 +68,81 @@ curl -s http://<host>:7777/api/v1/setup/network-interfaces
 - 组件升级走插件管理器，直接跑 `msf update` 会被拒绝或造成状态不一致
 - 数据目录仍是 `/opt/msf`，但重启服务要经插件而非裸 `systemctl`
 
-## 常用实际路径（Linux 系）
+## 数据目录随部署方式变化（不要一律按 `/opt/msf`）
+
+| 部署方式 | 数据目录 |
+|---|---|
+| Linux tarball / systemd | `/opt/msf` |
+| **fnOS FPK** | `/var/apps/msf/var` |
+| **Unraid PLG** | `/mnt/user/appdata/msf` |
+| Docker Compose（宿主机侧） | 默认 `./msf-data` |
+| Docker（容器内） | `/opt/msf` |
+| **macOS root LaunchDaemon** | `/Library/Application Support/MSF` |
+| 源码本地非 root 运行 | 通常 `./data`，取决于 `-c` / `--config` |
+
+先确定 `$DATA`，再拼子路径。下面以 `$DATA=/opt/msf` 为例。
+
+### 目录结构
+
+```
+$DATA/
+├── configs/mosdns/          MosDNS 配置（含 sub_config、rule、gen）
+├── configs/mihomo/          Mihomo 配置（含 user_configs、proxy_providers）
+├── configs/network/         network.yaml、network.nft、history
+├── configs/cloudflare-redirect/
+├── data/binaries/           受管组件二进制（mosdns / mihomo / zashboard）
+├── logs/                    msf.log / mosdns.log / mihomo.out.log
+├── database/msf.db          SQLite
+└── backups/
+```
 
 | 项目 | 路径 |
 |---|---|
-| 主程序 | `/usr/local/bin/msf` |
-| 数据目录 | `/opt/msf` |
-| 数据库 | `/opt/msf/database/msf.db` |
-| 服务配置 | `/opt/msf/configs/app.yaml` |
-| Mihomo 运行时配置 | `/opt/msf/configs/mihomo/config.yaml` |
-| Mihomo 用户配置 | `/opt/msf/configs/mihomo/user_configs/*.yaml` |
-| 订阅缓存 | `/opt/msf/configs/mihomo/proxy_providers/*.yaml` |
-| MosDNS 配置 | `/opt/msf/configs/mosdns/config.yaml` + `sub_config/*.yaml` |
-| 网络配置 | `/opt/msf/configs/network/network.yaml` |
-| 日志 | `/opt/msf/logs/` |
-| 组件二进制 | `/opt/msf/data/binaries/` |
+| 主程序（systemd 安装） | `/usr/local/bin/msf` |
+| 数据库 | `$DATA/database/msf.db` |
+| 服务配置 | `$DATA/configs/app.yaml` |
+| Mihomo 运行时配置 | `$DATA/configs/mihomo/config.yaml` |
+| Mihomo 用户配置 | `$DATA/configs/mihomo/user_configs/*.yaml` |
+| 订阅缓存 | `$DATA/configs/mihomo/proxy_providers/*.yaml` |
+| MosDNS 主配置 | `$DATA/configs/mosdns/config.yaml` |
+| MosDNS 子配置 | `$DATA/configs/mosdns/sub_config/*.yaml` |
+| MosDNS 开关 | `$DATA/configs/mosdns/rule/switch*.txt` |
+| 网络配置 | `$DATA/configs/network/network.yaml` |
+| 生成的 nft 脚本 | `$DATA/configs/network/network.nft` |
+
+macOS 在 TUN 接管期间额外保存 `configs/network/darwin-state.json`（原始 DNS 与 `net.inet.ip.forwarding`），停止时按快照恢复。
 
 ## 端口分配
 
-| 端口 | 归属 |
-|---|---|
-| `7777` | MSF WebUI / REST API |
-| `53` | MosDNS 主入口（UDP/TCP） |
-| `8888` | MosDNS 内部上游（供 Mihomo 查询） |
-| `6666` | Mihomo fake-IP DNS |
-| `7877` | Mihomo Redirect |
-| `7896` | Mihomo TProxy |
-| `7890/7891/7892` | Mihomo HTTP / SOCKS5 / Mixed |
-| `9090` | Mihomo external-controller |
-| `9099` | MosDNS 内部 API（含 DNS 审计缓冲） |
+完整链路与各端口的角色见 [`integration.md`](integration.md)。速查：
+
+### 对外（LAN 可达）
+
+| 端口 | 归属 | 用途 |
+|---|---|---|
+| `7777` | MSF | WebUI / REST API |
+| `53` | MosDNS | DNS 入口 |
+| `9099` | MosDNS | API / 审计缓冲 |
+| `7890` `7891` `7892` | Mihomo | HTTP / SOCKS5 / Mixed |
+| `9090` | Mihomo | external-controller |
+| `6666` | Mihomo | fake-IP DNS |
+
+### 内部（本机回环）
+
+| 端口 | 归属 | 用途 |
+|---|---|---|
+| `2222` | MosDNS | 内部国内 DNS |
+| `3333` | MosDNS | 内部国外 DNS（带过期缓存） |
+| `4444` | MosDNS | 国外 DNS + ECS（节点解析） |
+| `8888` | MosDNS | 代理核 `default-nameserver` / `proxy-server-nameserver` |
+| `7778` | MosDNS | 节点域名解析（含 5 ms 回退） |
+| `7877` | Mihomo | Redirect（TCP 透明） |
+| `7896` | Mihomo | TProxy（UDP 透明） |
+| `1053` | Mihomo | 国内 fake-IP（默认关闭） |
+
+辅助入口：`66`（requery）、`77`（stash）、`99`（clashmi）、`11101`（sing-box）。
+
+`7877` / `7896` 在 Linux **TUN 模式默认不启用**；**Docker 形态不写 nftables**。
 
 ## 快速自检
 

@@ -13,13 +13,17 @@
 
 MSF 的运维有几个**反直觉**的点，没有背景知识很容易误判：
 
+- **三方分工容易搞混**：MSF 只做编排（生成配置、看住进程、写 nft），MosDNS 才是 DNS 分流大脑，Mihomo 才是代理执行器。面板正常 ≠ 网络正常
 - 日志有**四个独立维度**，看错一个就会把正常的客户端行为当成故障
 - `config.yaml` 是**运行时副本**，直接改会被服务重新生成覆盖
 - `read` 作用域的 API 令牌**看不到节点、连接、规则**——诊断时会莫名 403
 - Docker 部署**没有 nftables**，按 Linux 思路查 nft 只会得到假故障
+- **数据目录随部署形态变化**，fnOS / Unraid / macOS 都不是 `/opt/msf`
+- **nft 对入站 TCP 是全量 redirect**，国内网站打不开也可能是 Mihomo 规则写错
+- **游戏每 30–40 秒掉线**通常是 UDP 端口未加入内核 bypass（Mihomo 隧道有 60 秒空闲超时）
 - 多数"上不了网"其实是**主路由的静态路由或 DHCP 配置**问题，不在 MSF 上
 
-这个 skill 把这些固化成可加载的流程，而不是每次从零推导。
+这个 skill 把这些固化成可加载的流程，而不是每次从零推导。三方联动的完整链路见 [`references/integration.md`](references/integration.md)。
 
 ---
 
@@ -103,11 +107,14 @@ powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1
   "ssh_user": "root",
   "ssh_key": "~/.ssh/msf_skill_ed25519",
   "deploy_kind": "systemd",
+  "data_dir": "/opt/msf",
   "token_scope": "operate"
 }
 ```
 
 令牌单独放 `~/.config/msf-skill/token`（0600）。**不要写 `password` 字段。**
+
+`data_dir` 随部署形态不同：fnOS 为 `/var/apps/msf/var`，Unraid 为 `/mnt/user/appdata/msf`，macOS 为 `/Library/Application Support/MSF`。不填时按 `deploy_kind` 推断。
 
 ---
 
@@ -147,13 +154,14 @@ powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1
 
 ```
 msf-skill/
-├── SKILL.md                      入口：触发条件 / 安全契约 / 决策树
+├── SKILL.md                      入口：触发条件 / 三方分工 / 安全契约 / 决策树
 ├── references/
-│   ├── environment.md            部署形态判定矩阵
+│   ├── integration.md            三方联动全链路、端口全景、开关表、不可改常量
+│   ├── environment.md            部署形态判定矩阵与数据目录
 │   ├── credentials.md            首次配置与凭据分层
 │   ├── api-map.md                API 端点按 T1–T4 分层
 │   ├── logs.md                   四类日志
-│   ├── troubleshooting.md        故障手册
+│   ├── troubleshooting.md        故障手册（11 个场景）
 │   ├── config-audit.md           配置体检
 │   ├── router-integration.md     主路由接入
 │   └── dangerous.md              T4 危险操作

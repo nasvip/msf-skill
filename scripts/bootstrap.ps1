@@ -78,6 +78,15 @@ $deployKind = if ($isDocker) { 'docker' }
 Write-Host "  部署形态: $deployKind"
 if ($isRoot -eq $false) { Write-Host '  ! is_root=false：53 端口 / TUN / nftables 都不会生效' }
 
+# 数据目录随形态变化
+$dataDir = switch ($deployKind) {
+    'docker' { '/opt/msf' }
+    'fnos'   { '/var/apps/msf/var' }
+    'macos'  { '/Library/Application Support/MSF' }
+    default  { '/opt/msf' }
+}
+Write-Host "  数据目录: $dataDir"
+
 # ---------------- 3. 风险告知 ----------------
 @"
 
@@ -192,6 +201,7 @@ $profileJson = [ordered]@{
     ssh_key               = $keyPath
     ssh_host_fingerprint  = $fp
     deploy_kind           = $deployKind
+    data_dir              = $dataDir
     token_scope           = $TokenScope
     configured_at         = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 }

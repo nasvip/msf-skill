@@ -50,12 +50,25 @@ print(f"HOST={g('host')}")
 print(f"PORT={g('port')}")
 print(f"SSH_USER={g('ssh_user')}")
 print(f"SSH_KEY={g('ssh_key')}")
+print(f"DEPLOY_KIND={g('deploy_kind')}")
+print(f"DATA_DIR={g('data_dir')}")
 PY
 )"
 fi
 
 [ -n "$HOST" ] || { echo "未指定 host，且未找到 profile。用法: $0 <host>" >&2; exit 2; }
 PORT="${PORT:-7777}"
+
+# 数据目录随部署形态变化（见 references/environment.md）
+DEPLOY_KIND="${DEPLOY_KIND:-systemd}"
+if [ -z "${DATA_DIR:-}" ]; then
+  case "$DEPLOY_KIND" in
+    fnos)   DATA_DIR="/var/apps/msf/var" ;;
+    unraid) DATA_DIR="/mnt/user/appdata/msf" ;;
+    macos)  DATA_DIR="/Library/Application Support/MSF" ;;
+    *)      DATA_DIR="/opt/msf" ;;
+  esac
+fi
 
 if [ -z "$TOKEN" ] && [ -f "$PROFILE_DIR/token" ]; then
   TOKEN="$(cat "$PROFILE_DIR/token")"
@@ -109,17 +122,18 @@ get "/api/v1/mihomo/overview" || true
 # ---------- 宿主侧只读检查（需要 SSH） ----------
 if [ -n "$SSH_USER" ] && [ -n "$SSH_KEY" ]; then
   SSH_OPTS="-i $SSH_KEY -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8"
-  say "宿主侧（只读）"
+  say "宿主侧（只读，deploy=$DEPLOY_KIND data=$DATA_DIR）"
   # shellcheck disable=SC2086
-  ssh $SSH_OPTS "$SSH_USER@$HOST" '
-    echo "--- uptime ---";      uptime 2>/dev/null
-    echo "--- memory ---";      free -m 2>/dev/null | head -2
-    echo "--- disk /opt/msf ---"; df -h /opt/msf 2>/dev/null | tail -1
-    echo "--- ip_forward ---";  cat /proc/sys/net/ipv4/ip_forward 2>/dev/null
-    echo "--- msf status ---";  msf status 2>/dev/null
-    echo "--- restart count ---"; systemctl show msf -p NRestarts -p ActiveState 2>/dev/null
-    echo "--- nft (容器内为空属正常) ---"; nft list table inet msf 2>&1 | head -5
-  ' 2>/dev/null || echo "(SSH 不可用，跳过宿主侧检查)"
+  ssh $SSH_OPTS "$SSH_USER@$HOST" "
+    echo '--- uptime ---';           uptime 2>/dev/null
+    echo '--- memory ---';           free -m 2>/dev/null | head -2
+    echo '--- disk $DATA_DIR ---';   df -h '$DATA_DIR' 2>/dev/null | tail -1
+    echo '--- ip_forward ---';       cat /proc/sys/net/ipv4/ip_forward 2>/dev/null
+    echo '--- msf status ---';       msf status 2>/dev/null
+    echo '--- restart count ---';    systemctl show msf -p NRestarts -p ActiveState 2>/dev/null
+    echo '--- nft (容器内为空属正常) ---'; nft list table inet msf 2>&1 | head -5
+    echo '--- switch states ---';    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do printf 'switch%s=%s ' \"\$i\" \"\$(cat '$DATA_DIR/configs/mosdns/rule/switch'\$i'.txt' 2>/dev/null)\"; done; echo
+  " 2>/dev/null || echo "(SSH 不可用，跳过宿主侧检查)"
 else
   say "宿主侧"
   echo "(未配置 SSH，跳过。宿主层检查需 scripts/bootstrap.sh 建立的专用密钥)"

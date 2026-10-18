@@ -74,15 +74,24 @@ Section 'Mihomo 概览';            Get-Json '/api/v1/mihomo/overview'
 # ---------- 宿主侧只读检查 ----------
 Section '宿主侧（只读）'
 if ($cfg -and $cfg.ssh_user -and $cfg.ssh_key -and (Test-Path $cfg.ssh_key)) {
-    $remote = @'
-echo "--- uptime ---";      uptime 2>/dev/null
-echo "--- memory ---";      free -m 2>/dev/null | head -2
-echo "--- disk /opt/msf ---"; df -h /opt/msf 2>/dev/null | tail -1
-echo "--- ip_forward ---";  cat /proc/sys/net/ipv4/ip_forward 2>/dev/null
-echo "--- msf status ---";  msf status 2>/dev/null
-echo "--- restart count ---"; systemctl show msf -p NRestarts -p ActiveState 2>/dev/null
-echo "--- nft (容器内为空属正常) ---"; nft list table inet msf 2>&1 | head -5
-'@
+    $dataDir = if ($cfg.data_dir) { $cfg.data_dir } else {
+        switch ($cfg.deploy_kind) {
+            'fnos'   { '/var/apps/msf/var' }
+            'unraid' { '/mnt/user/appdata/msf' }
+            'macos'  { '/Library/Application Support/MSF' }
+            default  { '/opt/msf' }
+        }
+    }
+    Write-Host "(data=$dataDir deploy=$($cfg.deploy_kind))"
+    $remote = @"
+echo '--- uptime ---';           uptime 2>/dev/null
+echo '--- memory ---';           free -m 2>/dev/null | head -2
+echo '--- disk $dataDir ---';    df -h '$dataDir' 2>/dev/null | tail -1
+echo '--- ip_forward ---';       cat /proc/sys/net/ipv4/ip_forward 2>/dev/null
+echo '--- msf status ---';       msf status 2>/dev/null
+echo '--- restart count ---';    systemctl show msf -p NRestarts -p ActiveState 2>/dev/null
+echo '--- nft (容器内为空属正常) ---'; nft list table inet msf 2>&1 | head -5
+"@
     & ssh -i $cfg.ssh_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new `
          -o ConnectTimeout=8 "$($cfg.ssh_user)@$HostName" $remote
     if ($LASTEXITCODE -ne 0) { Write-Host '(SSH 不可用，跳过)' }

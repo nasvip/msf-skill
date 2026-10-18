@@ -21,6 +21,23 @@ MSF 是一个自托管的 **MosDNS + Mihomo 管理平台**，通常部署为局�
 
 > 本项目是**非官方社区 skill**，与 MSF 官方无隶属或背书关系。上游：<https://github.com/scoltzero/msf>
 
+## 三方分工（先建立这层认知）
+
+| 组件 | 角色 |
+|---|---|
+| **MSF** | 编排器：生成配置、守护进程、写 nftables、提供 WebUI/API |
+| **MosDNS** | DNS 分流大脑：独占 `:53`，国内返回真实 IP，国外向 Mihomo 索取 fake-IP |
+| **Mihomo** | 代理执行器：生成 fake-IP（`:6666`）、按规则分流、真实出站 |
+
+MSF **自己不转发流量、不解析域名**——所以"面板正常"不等于"网络正常"。三个环节任一断裂都表现为"上不了网"。
+
+两条最容易踩的链路事实：
+
+1. **nft 对入站 TCP 是全量 redirect 到 Mihomo**，不区分国内外。国内网站打不开也可能是 Mihomo 规则写错。
+2. **DNS 的 UDP 不被劫持**（`udp dport 53 accept`），`:53` 留给 MosDNS 独占。
+
+完整链路、端口全景、开关含义见 [`references/integration.md`](references/integration.md)。
+
 ## 何时使用
 
 - 局域网设备断网、能连内网但打不开外网、DNS 解析异常
@@ -46,14 +63,14 @@ MSF 是一个自托管的 **MosDNS + Mihomo 管理平台**，通常部署为局�
 | **T3** | 配置变更：规则、上游、代理组、用户配置 | 差异预览 + 回滚点 + 同意 |
 | **T4** | 重置、卸载、升级、切换网络模式 | **仅在显式加载 `references/dangerous.md` 后**，逐字确认 |
 
-**危险区：未经授权任何情况下不得写入**
+**危险区：未经授权任何情况下不得写入**（`$DATA` 见下方部署形态表）
 
 ```
-/usr/local/bin/msf                          服务主程序
-/opt/msf/data/binaries/**                   受管组件二进制
-/opt/msf/configs/mosdns/rule/switch*.txt    自动生成的开关状态
-/opt/msf/configs/network/network.nft        自动生成的 nft 规则
-/opt/msf/configs/mihomo/config.yaml         运行时副本，会被 MSF 重新生成覆盖
+/usr/local/bin/msf                服务主程序
+$DATA/data/binaries/**            受管组件二进制
+$DATA/configs/mosdns/rule/switch*.txt   开关状态，由 WebUI 改写
+$DATA/configs/network/network.nft       自动生成的 nft 规则
+$DATA/configs/mihomo/config.yaml        运行时副本，会被 MSF 重新生成覆盖
 ```
 
 最后一条尤其重要：直接改运行时副本会被下一次生成覆盖。上游 Issue #22（订阅测速地址被强制改回）就是这个机制的实例。要改 Mihomo 配置，走**用户配置**（`configs/mihomo/user_configs/*.yaml`）或 WebUI。
@@ -71,21 +88,24 @@ MSF 是一个自托管的 **MosDNS + Mihomo 管理平台**，通常部署为局�
 
 ## 必须先探测环境，再动手
 
-不同部署形态的路径与能力**完全不同**，猜错会得到一堆假故障：
+不同部署形态的**路径、可用能力、升级方式**完全不同，猜错会得到一堆假故障：
 
 ```bash
-curl -s http://<host>:7777/api/v1/version        # 免认证
-curl -s http://<host>:7777/api/v1/setup/privilege # 返回 is_root / docker / macos
+curl -s http://<host>:7777/api/v1/version          # 免认证
+curl -s http://<host>:7777/api/v1/setup/privilege   # 返回 is_root / docker / macos
 ```
 
-| 形态 | 关键差异 |
-|---|---|
-| Linux systemd | `/opt/msf`，有 nftables，支持 `msf update` |
-| Docker TUN | 容器内同为 `/opt/msf`，**无 nftables**，**禁用 `msf update`** |
-| Unraid / fnOS | 插件托管，升级走插件管理器 |
-| macOS | TUN only，未签名 Beta |
+| 形态 | 数据目录 | 关键差异 |
+|---|---|---|
+| Linux systemd | `/opt/msf` | 有 nftables，支持 `msf update` |
+| Docker TUN | 容器内 `/opt/msf` | **无 nftables**，**禁用 `msf update`** |
+| Unraid PLG | `/mnt/user/appdata/msf` | 升级走插件管理器 |
+| fnOS FPK | `/var/apps/msf/var` | 升级走飞牛应用中心 |
+| macOS | `/Library/Application Support/MSF` | TUN only，未签名 Beta，无 nftables |
 
-判定方法与更多标志见 `references/environment.md`。
+**不要一律假设 `/opt/msf`。** 先确定数据目录，再拼子路径。
+
+判定方法与更多标志见 [`references/environment.md`](references/environment.md)。
 
 ## 诊断决策树（T1）
 
@@ -109,11 +129,12 @@ curl -s http://<host>:7777/api/v1/setup/privilege # 返回 is_root / docker / ma
 
 | 文件 | 内容 |
 |---|---|
-| `references/environment.md` | 部署形态判定矩阵、路径、能力差异 |
+| `references/integration.md` | **三方联动全链路、端口全景、开关表、不能改的常量** |
+| `references/environment.md` | 部署形态判定、数据目录、能力差异 |
 | `references/credentials.md` | 首次配置、凭据分层、作用域限制 |
 | `references/api-map.md` | API 端点按 T1–T4 分层 + 作用域要求 |
 | `references/logs.md` | 四类日志的区分与归因 |
-| `references/troubleshooting.md` | 故障 → 定位 → 处置手册 |
+| `references/troubleshooting.md` | 故障 → 定位 → 处置手册（11 个场景） |
 | `references/config-audit.md` | 配置体检项与判定阈值 |
 | `references/router-integration.md` | 主路由 DHCP 与静态路由前置条件 |
 | `references/dangerous.md` | T4 操作清单（不可逆，谨慎加载） |

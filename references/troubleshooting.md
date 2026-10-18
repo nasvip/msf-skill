@@ -202,6 +202,82 @@ curl -s -H "Authorization: Bearer $TOKEN" http://<host>:7777/api/v1/config/backu
 
 ---
 
+## 9. 游戏每隔 30–40 秒掉一次线
+
+**这是 MSF 的一个已知机制，不是玄学。**
+
+Mihomo 的 UDP 隧道有固定的 **60 秒空闲超时**（`tunnel.go` 的 `udpTimeout`）。国内游戏 UDP 若经 Mihomo，会话会被周期性回收，表现为每 30–40 秒断一次。
+
+MSF 的应对是在内核层直接放行：
+
+```
+set game_udp_bypass { type inet_service; elements = { <端口> } }
+...
+udp dport @game_udp_bypass return
+```
+
+**定位**
+
+```bash
+# 当前放行端口（默认 22101,22102）
+grep -A2 'game_udp_bypass' $DATA/configs/network/network.nft
+
+# 或从设置读取
+curl -s -H "Authorization: Bearer $TOKEN" http://<host>:7777/api/v1/settings | grep game_udp_bypass
+```
+
+**处置（T3）**：把该游戏的 UDP 端口加入 `network.game_udp_bypass_ports`，然后重新应用网络配置。国内 UDP 目标（`china_udp_ipv4/6` 集合）同样在内核层 return，不进 Mihomo。
+
+> 若用户报"游戏掉线"但端口已在放行列表里，方向应转向节点质量或游戏服务器本身，而不是继续改 MSF。
+
+---
+
+## 10. 只有部分设备走代理（或只有部分设备不走）
+
+**这是设计功能，不是故障。** 由 `client_ip.txt` + 两个开关控制：
+
+| 开关 | 状态 | 效果 |
+|---|---|---|
+| `switch2 = A` | 启用 | **只有** `client_ip.txt` 里的 IP 走代理，其余直连 |
+| `switch12 = A` | 启用 | **只有** `client_ip.txt` 里的 IP 不走代理，其余走代理 |
+
+两者同时为 `A` 时以流程顺序决定，实际效果接近"白名单直连"。
+
+**定位**
+
+```bash
+curl -s http://<host>:9099/plugins/switch2/show
+curl -s http://<host>:9099/plugins/switch12/show
+cat $DATA/configs/mosdns/client_ip.txt
+```
+
+**处置**：在 WebUI 的客户端管理里增删 IP，不要手工编辑 `client_ip.txt`（会被改写）。
+
+---
+
+## 11. Docker 环境里 nft / ip rule 全是空
+
+**不是故障。** Docker 形态使用 Mihomo TUN，**不写宿主机 nftables，也不建 policy routing**。
+
+判定：
+
+```bash
+curl -s http://<host>:7777/api/v1/setup/privilege   # runtime.docker = true
+cat /.dockerenv
+env | grep MSF_DOCKER_NETWORK_MODE
+```
+
+在这种形态下，排查应转向：
+
+- TUN 设备是否存在（`/dev/net/tun`）
+- 容器是否具备 `CAP_NET_ADMIN` / `CAP_NET_RAW`
+- `host-tun` 还是 `macvlan-tun`
+- 主路由静态路由是否指向容器实际的 LAN IP（macvlan 模式）
+
+同理，Docker 与 fnOS 下 `msf update` 被禁用，升级要走镜像或插件管理器。
+
+---
+
 ## 处置后的复验清单
 
 任何处置完成后，按这四条自证，不要只声称"已修复"：

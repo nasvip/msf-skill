@@ -114,6 +114,24 @@ fi
 echo "  部署形态: $DEPLOY_KIND"
 [ "${IS_ROOT:-}" = "false" ] && echo "  ⚠ is_root=false：53 端口 / TUN / nftables 都不会生效"
 
+# 数据目录随形态变化
+case "$DEPLOY_KIND" in
+  docker) DATA_DIR="/opt/msf" ;;
+  fnos)   DATA_DIR="/var/apps/msf/var" ;;
+  macos)  DATA_DIR="/Library/Application Support/MSF" ;;
+  *)      if [ "$MODE" = "remote" ] && [ -n "${SSH_USER:-}" ]; then
+            if ssh -o BatchMode=yes -o ConnectTimeout=8 "$SSH_USER@$HOST" \
+                 'test -d /mnt/user/appdata/msf' 2>/dev/null; then
+              DATA_DIR="/mnt/user/appdata/msf"
+            else
+              DATA_DIR="/opt/msf"
+            fi
+          else
+            DATA_DIR="/opt/msf"
+          fi ;;
+esac
+echo "  数据目录: $DATA_DIR"
+
 # ---------------- 3. 风险告知 ----------------
 cat <<EOF
 
@@ -251,6 +269,7 @@ PROFILE_JSON="$PROFILE_DIR/profile.json"
   printf '  "ssh_key": "%s",\n' "$KEY_PATH"
   printf '  "ssh_host_fingerprint": "%s",\n' "${FP:-}"
   printf '  "deploy_kind": "%s",\n' "$DEPLOY_KIND"
+  printf '  "data_dir": "%s",\n' "$DATA_DIR"
   printf '  "token_scope": "%s",\n' "$TOKEN_SCOPE"
   printf '  "configured_at": "%s"\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf '}\n'
