@@ -186,6 +186,22 @@ curl -s -H "Authorization: Bearer $TOKEN" http://<host>:7777/api/v1/system/start
 修复前必须能拿到这些证据，缺一项就不要改：
 
 ```bash
+# 0) 跨日志时间轴：同一条请求在 DNS 层与代理层分别发生了什么
+bash scripts/log-correlate.sh <host> <域名或客户端IP>
+bash scripts/log-correlate.sh <host> <关键词> --all --limit 100   # 放宽时间与条数
+```
+
+输出按时间合并三个来源：
+
+| 标记 | 来源 | 意义 |
+|---|---|---|
+| `AUD` | MosDNS 审计缓冲 | DNS 阶段，**含正常解析**，有响应码与耗时 |
+| `MOS` | MosDNS 文本日志 | 只有 WARN/ERROR，能看到上游超时与关闭 |
+| `MIH` | Mihomo 日志 | 分流结果（命中哪条规则）与出站错误 |
+
+判读方法：`AUD` 显示 `NOERROR 0.08ms` 而 `MIH` 超时 → **解析没问题，目标不可达**；`AUD` 显示 `SERVFAIL 2940ms` 而 `MIH` 报 `can't resolve ip` → **上游解析失败**。
+
+```bash
 # 1) 域名是否真的不存在（多上游交叉验证，避免单上游误判）
 for u in 223.5.5.5 119.29.29.29 8.8.8.8; do
   printf '%-16s ' "$u"; dig +short +time=3 @$u <域名> A | tr '\n' ' '; echo
@@ -195,15 +211,15 @@ done
 # 2) 节点端口是否可达（从 MSF 主机发起）
 for p in <端口>; do timeout 5 nc -z <节点IP> $p && echo "$p open" || echo "$p closed"; done
 
-# 3) 谁在发请求（MosDNS 审计缓冲，含 client_ip）
-curl -s 'http://<host>:9099/api/v2/audit/logs?page=1&page_size=50' \
-  | python3 -c 'import sys,json;[print(x["client_ip"],x["query_name"],x["response_code"]) for x in json.load(sys.stdin)["logs"]]'
+# 3) 谁在发请求（MosDNS 审计缓冲，含 client_ip，支持 q= 全文检索）
+curl -s -G --data-urlencode 'q=<域名或IP>' --data-urlencode 'page_size=50' \
+  'http://<host>:9099/api/v2/audit/logs'
 
 # 4) 该请求命中了哪条规则（Mihomo 日志里的 match 部分）
 grep '<域名>' $DATA/logs/mihomo.out.log | tail -1 | sed 's/.*msg="//' | cut -c1-160
 ```
 
-审计缓冲上限 100000 条、每页最多 50 条，高频域名也可能落在窗口外——**查不到不等于没发生**，要用 Mihomo 日志交叉验证。
+审计缓冲上限 100000 条、每页最多 50 条。`q=` 是服务端子串检索，覆盖域名与客户端 IP；但缓冲是环形的，高频域名也可能落到窗口外——**查不到不等于没发生**，要用 Mihomo 日志交叉验证。
 
 ## 六、修复协议
 

@@ -176,6 +176,25 @@ bash scripts/log-triage.sh <host> --baseline-save
 
 核心立场：**不是所有 WARN 都要修。** 只有「仍在发生 + 有可观测影响 + 根因有证据」三条同时成立才动手。
 
+### 跨日志时间轴
+
+分诊出"仍在发生"之后，用它定位失败在哪一层：
+
+```bash
+bash scripts/log-correlate.sh <host> www.baidu.com
+bash scripts/log-correlate.sh <host> 10.0.0.8 --all --limit 100
+```
+
+三个来源按时间合并：
+
+| 标记 | 来源 | 意义 |
+|---|---|---|
+| `AUD` | MosDNS 审计缓冲 | DNS 阶段，**含正常解析**，有响应码与耗时 |
+| `MOS` | MosDNS 文本日志 | 只有 WARN/ERROR，能看到上游超时与关闭 |
+| `MIH` | Mihomo 日志 | 命中哪条规则、出站错在哪 |
+
+`AUD` 正常 + `MIH` 超时 → 解析没问题、目标不可达；`AUD` SERVFAIL → 上游解析失败。一眼分开，不用猜。
+
 ## 不做什么
 
 - **不提供代理节点、订阅或任何访问凭据**
@@ -230,6 +249,7 @@ msf-skill/
 │   ├── bootstrap.sh / .ps1       首次配置
 │   ├── selftest.sh               安装后自检（检查包完整性 / 凭据 / 连通性 / 依赖）
 │   ├── log-triage.sh             日志分诊（只读）
+│   ├── log-correlate.sh          跨日志时间轴（只读）
 │   └── msf-health.sh / .ps1      只读快照
 └── .github/workflows/validate.yml
 ```

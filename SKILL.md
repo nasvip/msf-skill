@@ -57,6 +57,7 @@ MSF **自己不转发流量、不解析域名**——所以"面板正常"不等�
 ```bash
 bash scripts/log-triage.sh <host>                 # 只读：聚合 + 时间窗 + 基线对比 + DNS 审计
 bash scripts/log-triage.sh <host> --baseline-save # 平稳时建一次基线，之后自动比对突增
+bash scripts/log-correlate.sh <host> <域名|IP>    # 跨日志时间轴：同一条请求在 DNS/代理两层的全过程
 ```
 
 判据：
@@ -69,6 +70,17 @@ bash scripts/log-triage.sh <host> --baseline-save # 平稳时建一次基线，�
 | 分散且低频 | 通常是客户端行为噪音 |
 
 然后对每个仍在发生的签名回答**归因五问**：谁发起的 → 目标是什么 → 命中哪条规则 → 失败在哪一层 → 持续还是已恢复。五问答不上来就是证据不足，**不允许修**。
+
+第 4 问「失败在哪一层」用 `log-correlate.sh` 落地——它把 MosDNS 审计缓冲（DNS 阶段）、MosDNS 文本日志、Mihomo 日志按时间合并：
+
+```
+10-18 16:31:30.864  [AUD]  www.baidu.com  NOERROR  0.082ms  client=10.0.0.104   ← DNS 正常
+10-18 12:21:36.183  [MIH]  全局直连 → www.baidu.com:443 i/o timeout              ← 出站失败
+```
+
+两条一对，立刻能判断是"解析没问题、目标不可达"，而不是凭猜。
+
+> 注意：`mosdns.log` **只记 WARN/ERROR，不记正常解析**。想看 DNS 阶段必须靠审计缓冲（`:9099`），它有 10 万条的环形上限，超出后查不到——查不到不等于没发生。
 
 完整签名目录、决策矩阵、真实案例见 [`references/log-triage.md`](references/log-triage.md)。
 

@@ -181,6 +181,117 @@ GET http://<MSF主机>:9090/                        → 401（Mihomo 配了 secr
 
 ---
 
+## 案例 F：随机子域名把上游拖到 5 秒超时 —— 值得修
+
+| 项 | 内容 |
+|---|---|
+| 状态 | 反复出现，跨越 10-11 / 10-14 / 10-15 多天 |
+| 结论 | **值得修**：在 MosDNS 侧拦掉该域族 |
+
+**现象**
+
+```
+[ MOS ] udp_all  8efb7a69ff363ea9a8602640620c5b99.jddebug.com.  5.000149018s  ✗ context deadline exceeded
+[ MOS ] udp_requery  163510b89a05b4f76a985c95da5b0d12.jddebug.com.  5.000648943s  ✗ context deadline exceeded
+```
+
+**取证过程**
+
+1. `log-correlate.sh <host> jddebug --all` 把三个来源按时间合并，看到耗时精确停在 **5.000s**：
+
+```
+10-11 20:45:54.280  [MOS]  udp_all  <32位哈希>.jddebug.com.  5.000940312s  ✗ context deadline exceeded
+10-14 04:31:11.330  [MOS]  udp_requery  <32位哈希>.jddebug.com.  5.000648943s  ✗ context deadline exceeded
+```
+
+2. 每条的子域名都是**随机哈希**（`88bd8779d7f457b53bc705f5eb0e07b5` 之类），父域 `jddebug.com` 是京东系的调试/埋点域。
+
+3. 审计缓冲里同名查询的响应码是 `SERVFAIL`、耗时 `2940ms` —— 权威侧本来就答不出来。
+
+**为什么这是真问题**
+
+`5.000s` 不是巧合，是 `forward` 插件的**单次查询预算上限**。也就是说每个这样的请求都：
+
+- 占住一个并发槽整整 5 秒
+- `concurrent: 3` 的池子被这类请求占满时，**真实解析被排队拖慢**
+- 用户可感知的表现是"偶尔打开网页卡一下"，很难自己归因到 DNS
+
+**处置**
+
+在 MosDNS 拦截该域族（T3，改配置需先同意），让它立刻返回而不是等 5 秒：
+
+```yaml
+# 加入拦截列表（domain_set 或 blocklist 插件）
++.jddebug.com
+```
+
+判据：改完重跑 `log-correlate.sh <host> jddebug`，该签名应消失；同时 `log-triage.sh` 里 `未命中`/`unmatched_rule` 不会因此升高（拦截发生在规则之外）。
+
+**教训**
+
+- 耗时**恰好**落在某个整数（5.000s / 1.200s）上是超时封顶，不是"慢"，别去查网络质量
+- `SERVFAIL` + 随机子域名 = 埋点域名的垃圾查询，且**不会自己变好**
+- 这类才是"该修"的：仍在发生 + 有可观测影响（拖慢并发池）+ 根因清楚
+
+---
+
+## 案例 G：订阅里的占位节点 —— 想修但修不了
+
+| 项 | 内容 |
+|---|---|
+| 状态 | 持续存在 |
+| 结论 | **技术上无法在本地持久修复**，只能上报或忽略 |
+
+**现象**
+
+MosDNS 日志里 `sub.info.node.` 出现 173 次 `transport has been closed`，是当时 MosDNS 签名排行的第二名。
+
+**取证过程**
+
+1. 该域名在订阅文件里被当作节点服务器：
+
+```yaml
+# proxy_providers/Dmit.yaml
+- name: "📅过期时间 2027-07-30"
+  type: ss
+  server: sub.info.node          # ← 不存在的占位域名
+  port: 443
+  password: SubInfoNode
+  cipher: aes-128-gcm
+- name: "⌛剩余流量 187.71GB"
+  server: sub.info.node          # ← 同上
+```
+
+2. 这是机场的常见做法：用假节点把"到期时间 / 剩余流量"显示在客户端节点列表里。MSF 把它们当真实节点导入了。
+
+3. 后果：参与 `url-test` 优选永远失败、每次被选中触发一次 DNS 解析失败。
+
+**为什么修不了**
+
+原计划给 provider 加 `exclude-filter` 排除这两个名字。核代码后发现不可行：
+
+```go
+// configgen.go
+func replaceMihomoProxyProviders(content, providersYAML string) string {
+    return replaceTopLevelYAMLBlock(content, "proxy-providers", providersYAML)
+}
+```
+
+`proxy-providers` 是**整块替换**——启动和每次订阅同步都会重新渲染整段，任何手写的 `filter` / `exclude-filter` / 自定义 `health-check` 都会消失。与 [#22](https://github.com/scoltzero/msf/issues/22) 同一个根因。
+
+**处置**
+
+- **不要**改运行时副本（改了会被覆盖，还会误以为生效）
+- **不要**改二进制
+- 正确路径：等上游支持 provider 级字段，或让机场别下发占位节点
+- 影响有限：只增加日志噪音与少量健康检查开销，不影响实际分流
+
+**教训**
+
+动手前先确认"这个改动能活过下一次重生成"。凡是被 `render*` 系列函数生成的配置段，**手改一律无效**。
+
+---
+
 ## 新案例模板
 
 ```markdown
