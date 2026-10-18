@@ -116,9 +116,46 @@ grep -E 'tproxy-port|redir-port|routing-mark' $DATA/configs/mihomo/config.yaml
 
 ## 4. 网络安全
 
+### 已知高风险项：MosDNS `:9099` 默认无认证
+
+MosDNS 的 API 监听 `0.0.0.0:9099`（模板注释写明"跟 web ui 绑定，不要修改此端口"），**该监听器不带任何认证**。
+
+实测（从同一局域网的其它主机、不带任何凭据）：
+
+```
+GET http://<host>:9099/api/v2/audit/stats   → 200
+```
+
+同一监听器还挂着这些写接口：
+
+```
+POST /plugins/switch1..switch15/post   改 MosDNS 开关
+POST /plugins/blocklist/post          改黑名单
+POST /plugins/client_ip/post          改按客户端分流名单
+POST /api/v1/system/restart           重启 MosDNS
+```
+
+**后果**：局域网内任何设备都可以读取全部 DNS 查询记录（等同于看到每台设备访问了哪些域名），也可以修改分流开关与名单。
+
+**缓解**（按推荐顺序）：
+
+1. 宿主防火墙只放行本机与 MSF 所在主机：
+   ```bash
+   iptables -I INPUT -p tcp --dport 9099 ! -s 127.0.0.1 -j DROP
+   # 或 nft:  nft add rule inet filter input tcp dport 9099 ip saddr != 127.0.0.1 drop
+   ```
+2. 把 9099 限制在专用管理 VLAN / VPN 内
+3. 不要把 `:7777` 与 `:9099` 一起暴露到公网
+
+对照参考：Mihomo 的 `:9090` 因为配了 `secret`，未认证请求返回 `401`；`:9099` 没有这一层。体检时把这条列为**高优先级**，并明确告知用户"这是模板默认行为，不是配置写错"。
+
+### 其它检查项
+
 | 检查 | 期望 |
 |---|---|
-| `external-controller` 是否暴露 `0.0.0.0` | 若暴露，必须有强 `secret` |
+| `external-controller` 是否暴露 `0.0.0.0` | 若暴露，必须有强 `secret`（返回 401 即为正常） |
+| MosDNS `:9099` 暴露范围 | 应仅限本机或管理网段（见上） |
+| Mihomo `dns.listen` `0.0.0.0:6666` | 模板默认对 LAN 开放；若不需要外部使用，可在防火墙上限制 |
 | `allow-lan` | 需要局域网设备用时为 `true`，否则应为 `false` |
 | WebUI `:7777` 是否暴露公网 | 不应暴露；仅在 LAN 或经 VPN |
 | 管理员密码强度 | 至少 8 位，非默认 |

@@ -148,6 +148,28 @@ powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1
 
 请在**你拥有或已获充分授权**的网络中使用。
 
+## 覆盖范围与已知缺口
+
+上游有约 **386 条** API 路由，本 skill 按"日常真正会用到"的原则覆盖了约 80 条，其余通过 WebUI 操作即可。
+
+**已覆盖**：部署形态与数据目录、CLI、端口全景、三方联动链路、四类日志、11 类故障场景、配置体检、主路由接入、凭据分层、危险区清单。
+
+**尚未覆盖**（知道有缺口，比假装齐全更可靠）：
+
+| 缺口 | 现状 |
+|---|---|
+| MosDNS DNS 学习 / requery 调度 | 未写。相关端点为 `/plugins/requery/*` 与 `mosdns_routing_scheduler` 设置 |
+| 配置历史与回滚 | 只提了一句 `GET /api/v1/history`，未写 `compare` / 回滚流程 |
+| 备份与恢复 | 只提了 `GET /api/v1/config/backups` |
+| 组件更新（MosDNS / Mihomo / Zashboard 分别升级） | 未写 `/api/v1/component-updates` |
+| 客户端管理与按 IP 分流的具体增删 | 只写了判定方式，未写增删流程 |
+| geosite / rule-sets / rule-sources / AdGuard 规则的编辑 | 未写 |
+| 用户与权限、审计日志 | 未写 |
+| Zashboard（`:9090`）的用法 | 未写 |
+| Linux TUN 模式的独立诊断路径 | 只在 Docker 段落提到 TUN |
+
+遇到这些场景时，应按 `references/api-map.md` 的"未知路径怎么办"处理，或直接引导用户去 WebUI，不要凭猜测调用接口。
+
 ---
 
 ## 仓库结构
