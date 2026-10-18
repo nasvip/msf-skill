@@ -1,0 +1,127 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 校验 SKILL.md frontmatter
+        run: |
+          python3 - <<'PY'
+          import re, sys, pathlib
+
+          text = pathlib.Path("SKILL.md").read_text(encoding="utf-8")
+          m = re.match(r"^---\r?\n(.*?)\r?\n---\r?\n", text, re.S)
+          if not m:
+              sys.exit("SKILL.md 缺少 YAML frontmatter")
+
+          fm = m.group(1)
+
+          # name
+          nm = re.search(r"^name:\s*(\S+)\s*$", fm, re.M)
+          if not nm:
+              sys.exit("frontmatter 缺少 name")
+          name = nm.group(1)
+          if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name):
+              sys.exit(f"name 非 kebab-case: {name}")
+          if len(name) > 64:
+              sys.exit("name 超过 64 字符")
+
+          # directory name must match
+          repo_dir = pathlib.Path.cwd().name
+          if repo_dir != name and repo_dir != "msf-skill":
+              print(f"注意: 目录名 {repo_dir} 与 name {name} 不一致（允许仓库名不同）")
+
+          # description
+          dm = re.search(r"^description:\s*(>-?|\|)\s*\n((?:[ \t]+.*\n)+)", fm, re.M)
+          if dm:
+              desc = " ".join(l.strip() for l in dm.group(2).splitlines()).strip()
+          else:
+              dm = re.search(r"^description:\s*(.+)$", fm, re.M)
+              if not dm:
+                  sys.exit("frontmatter 缺少 description")
+              desc = dm.group(1).strip()
+          if not (1 <= len(desc) <= 1024):
+              sys.exit(f"description 长度越界: {len(desc)}")
+
+          print(f"OK  name={name}  description_len={len(desc)}")
+          PY
+
+      - name: 校验引用的文件都存在
+        run: |
+          python3 - <<'PY'
+          import re, pathlib, sys
+
+          text = pathlib.Path("SKILL.md").read_text(encoding="utf-8")
+          missing = []
+          for ref in set(re.findall(r"`(references/[^`]+?\.md)`", text)) | \
+                     set(re.findall(r"`(scripts/[^`]+?)`", text)):
+              if not pathlib.Path(ref).exists():
+                  missing.append(ref)
+          if missing:
+              sys.exit("引用了不存在的文件: " + ", ".join(sorted(missing)))
+          print("OK  所有引用文件存在")
+          PY
+
+      - name: 扫描疑似凭据
+        run: |
+          python3 - <<'PY'
+          import re, pathlib, sys
+
+          patterns = [
+              (r"ghp_[A-Za-z0-9]{20,}", "GitHub PAT"),
+              (r"github_pat_[A-Za-z0-9_]{20,}", "GitHub fine-grained PAT"),
+              (r"sk-[A-Za-z0-9]{20,}", "OpenAI 风格 key"),
+              (r"-----BEGIN (RSA|OPENSSH|EC|PRIVATE) PRIVATE KEY-----", "私钥"),
+              (r"(?i)\bpassword\s*[:=]\s*\S+", "疑似密码赋值"),
+              (r"(?i)\btoken\s*[:=]\s*[A-Za-z0-9._\-]{20,}", "疑似令牌赋值"),
+          ]
+          # 示例/占位符白名单
+          allow = re.compile(r"(<[^>]+>|\$\{?\w+\}?|xxx+|EXAMPLE|example|your[_-]?token|占位)", re.I)
+
+          hits = []
+          for p in pathlib.Path(".").rglob("*"):
+              if not p.is_file() or ".git/" in p.as_posix():
+                  continue
+              if p.suffix.lower() in {".png", ".jpg", ".webp", ".ico", ".zip"}:
+                  continue
+              try:
+                  text = p.read_text(encoding="utf-8")
+              except Exception:
+                  continue
+              for i, line in enumerate(text.splitlines(), 1):
+                  for pat, label in patterns:
+                      if re.search(pat, line):
+                          if allow.search(line):
+                              continue
+                          hits.append(f"{p}:{i}  {label}: {line.strip()[:90]}")
+
+          if hits:
+              print("发现疑似凭据：")
+              print("\n".join(hits))
+              sys.exit(1)
+          print("OK  未发现疑似凭据")
+          PY
+
+      - name: 检查脚本语法
+        run: |
+          for f in scripts/*.sh; do
+            [ -e "$f" ] || continue
+            sh -n "$f" && echo "OK  $f"
+          done
+
+      - name: 检查 shell 可执行位
+        run: |
+          fail=0
+          for f in scripts/*.sh; do
+            [ -e "$f" ] || continue
+            if [ ! -x "$f" ]; then echo "缺少可执行位: $f"; fail=1; fi
+          done
+          exit $fail
