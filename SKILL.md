@@ -179,6 +179,10 @@ curl -s http://<host>:7777/api/v1/setup/privilege   # 返回 is_root / docker / 
 诊断类操作完成后，用可观测结果自证，而不是声称「已修复」：
 
 ```bash
+# 首次使用/装好后：确认环境可用、缺什么
+bash scripts/selftest.sh                 # 全量（含远端连通性）
+bash scripts/selftest.sh --local         # 只做本地静态检查
+
 # 宿主侧一次性体检（比逐项查快）
 sudo msf doctor
 

@@ -204,16 +204,23 @@ if [ "$SAVE_BASELINE" = 1 ]; then
   cp "$TMP" "$BASELINE" 2>/dev/null && printf '基线已保存：%s（%s 条签名）\n\n' "$BASELINE" "$(wc -l < "$TMP" | tr -d ' ')"
 elif [ "$USE_BASELINE" = 1 ] && [ -f "$BASELINE" ]; then
   echo "──── 与基线对比（突增 / 新增 / 消失）────"
-  CMP=$(awk -F'\t' 'NR==FNR { b[$1"|"$2]=$4+0; next }
+  UP=$(awk -F'\t' 'NR==FNR { b[$1"|"$2]=$4+0; next }
     { k=$1"|"$2; cur=$4+0; old=b[k]+0;
       if (old==0 && cur>=5) { printf "  NEW    %4d/24h  %s\n", cur, k; }
-      else if (old>0 && cur >= old*2 && cur >= 5) { printf "  x%.1f  %4d/24h (原 %d)  %s\n", cur/old, cur, old, k; }
-      seen[k]=1 }
+      else if (old>0 && cur >= old*2 && cur >= 5) { printf "  x%.1f  %4d/24h (原 %d)  %s\n", cur/old, cur, old, k; } }' \
+    "$BASELINE" "$TMP" | head -8)
+  GONE=$(awk -F'\t' 'NR==FNR { b[$1"|"$2]=$4+0; next } { seen[$1"|"$2]=1 }
     END { for (k in b) if (!(k in seen) && b[k]>=5) printf "  GONE   %4d/24h  %s\n", b[k], k }' \
-    "$BASELINE" "$TMP" | head -12)
-  if [ -n "$CMP" ]; then
-    printf '%s\n' "$CMP"
+    "$BASELINE" "$TMP" | head -8)
+  if [ -n "$UP" ]; then
+    printf '%s\n' "$UP"
   else
+    echo "  （无新增或突增）"
+  fi
+  if [ -n "$GONE" ]; then
+    printf '%s\n' "$GONE"
+  fi
+  if [ -z "$UP" ] && [ -z "$GONE" ]; then
     echo "  （与基线无明显变化）"
   fi
   echo

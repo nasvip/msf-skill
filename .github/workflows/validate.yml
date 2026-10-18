@@ -125,3 +125,8 @@ jobs:
             if [ ! -x "$f" ]; then echo "缺少可执行位: $f"; fail=1; fi
           done
           exit $fail
+
+      - name: 运行自检脚本（本地模式，验证自检器本身可用）
+        run: |
+          chmod +x scripts/*.sh
+          sh scripts/selftest.sh --local

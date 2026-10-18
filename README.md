@@ -65,6 +65,20 @@ mklink /J "%USERPROFILE%\.claude\skills\msf-skill" "%USERPROFILE%\.agents\skills
 
 接入一个 MSF 实例需要一次配置。**本 skill 不接受、不保存、不传输任何密码。**
 
+### 先自检
+
+装好后先跑一次，它会告诉你缺什么：
+
+```bash
+bash scripts/selftest.sh --local     # 只查包完整性，不联网
+bash scripts/selftest.sh             # 全量：加查 WebUI / MosDNS API / SSH / 远端依赖
+bash scripts/selftest.sh 10.0.0.10   # 临时指定 host
+```
+
+检查项：frontmatter 合规、引用文件齐全、脚本语法与执行位、疑似凭据、profile 与令牌权限、WebUI 连通性、运行时形态、令牌作用域、MosDNS API 可达性、SSH 免密、数据目录、远端 `grep/sed/awk/curl` 等依赖。
+
+每条失败都带修复建议，不会只说"错了"。
+
 ### 自动化脚本
 
 ```bash
@@ -214,6 +228,7 @@ msf-skill/
 │   └── dangerous.md              T4 危险操作
 ├── scripts/
 │   ├── bootstrap.sh / .ps1       首次配置
+│   ├── selftest.sh               安装后自检（检查包完整性 / 凭据 / 连通性 / 依赖）
 │   ├── log-triage.sh             日志分诊（只读）
 │   └── msf-health.sh / .ps1      只读快照
 └── .github/workflows/validate.yml
