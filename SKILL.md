@@ -17,6 +17,8 @@ metadata:
 
 # MSF 平台运维
 
+> 本文中 `$DATA` 指 MSF 数据目录：systemd 为 `/opt/msf`，fnOS 为 `/var/apps/msf/var`，Unraid 为 `/mnt/user/appdata/msf`，macOS 为 `/Library/Application Support/MSF`。
+
 MSF 是一个自托管的 **MosDNS + Mihomo 管理平台**，通常部署为局域网**旁路由**：DNS 由 MosDNS 在 `:53` 接住，国外域名返回 **fake-IP**，流量经 nftables TProxy 转入 Mihomo 还原域名后按规则出站。
 
 > 本项目是**非官方社区 skill**，与 MSF 官方无隶属或背书关系。上游：<https://github.com/scoltzero/msf>
@@ -150,6 +152,9 @@ curl -s http://<host>:7777/api/v1/setup/privilege   # 返回 is_root / docker / 
 诊断类操作完成后，用可观测结果自证，而不是声称「已修复」：
 
 ```bash
+# 宿主侧一次性体检（比逐项查快）
+sudo msf doctor
+
 # 只读快照
 bash scripts/msf-health.sh <host>
 

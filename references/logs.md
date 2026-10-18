@@ -1,5 +1,7 @@
 # 四类日志：区分与归因
 
+> 本文中 `$DATA` 指 MSF 数据目录：systemd 为 `/opt/msf`，fnOS 为 `/var/apps/msf/var`，Unraid 为 `/mnt/user/appdata/msf`，macOS 为 `/Library/Application Support/MSF`。
+
 MSF 的日志不是"一个日志"，而是**四个独立维度**。用错一个就会得出相反结论——最常见的错误是拿 MosDNS 的 `connection ctx canceled` 当成故障，或者拿 Mihomo 的 `i/o timeout` 当成节点挂了。
 
 ## 总览
@@ -7,9 +9,9 @@ MSF 的日志不是"一个日志"，而是**四个独立维度**。用错一个�
 | # | 日志 | 位置 | WebUI 路径 | 内容 |
 |---|---|---|---|---|
 | 1 | **MosDNS DNS 审计日志** | 内存环形缓冲，`:9099` `/api/v2/audit/logs` | MosDNS → DNS 日志 | 每条解析：客户端 IP、域名、qtype、响应、耗时、命中规则 |
-| 2 | **MosDNS 实时日志** | `/opt/msf/logs/mosdns.log` | MosDNS → 实时日志 | 守护进程自身状态、上游超时、插件错误、连接被重置 |
-| 3 | **Mihomo 核心日志** | `/opt/msf/logs/mihomo.out.log`（异常流 `mihomo.err.log`） | Mihomo → 日志 | 规则命中、出站 dial、节点超时、DNS 解析失败 |
-| 4 | **MSF 平台日志** | `/opt/msf/logs/msf.log` | 系统 → 日志 | HTTP 审计、智能体轨迹、数据库迁移、订阅定时任务 |
+| 2 | **MosDNS 实时日志** | `$DATA/logs/mosdns.log` | MosDNS → 实时日志 | 守护进程自身状态、上游超时、插件错误、连接被重置 |
+| 3 | **Mihomo 核心日志** | `$DATA/logs/mihomo.out.log`（异常流 `mihomo.err.log`） | Mihomo → 日志 | 规则命中、出站 dial、节点超时、DNS 解析失败 |
+| 4 | **MSF 平台日志** | `$DATA/logs/msf.log` | 系统 → 日志 | HTTP 审计、智能体轨迹、数据库迁移、订阅定时任务 |
 
 ## 分流排查该看哪个
 
@@ -36,7 +38,7 @@ curl -s 'http://<host>:9099/api/v2/audit/rank/slowest'
 ## #2 MosDNS 实时日志
 
 ```bash
-tail -n 200 /opt/msf/logs/mosdns.log
+tail -n 200 $DATA/logs/mosdns.log
 ```
 
 ### 常见条目与真实含义
@@ -53,7 +55,7 @@ tail -n 200 /opt/msf/logs/mosdns.log
 ## #3 Mihomo 核心日志
 
 ```bash
-tail -n 200 /opt/msf/logs/mihomo.out.log
+tail -n 200 $DATA/logs/mihomo.out.log
 ```
 
 ### 两类高频 WARN 的正确归因
@@ -82,8 +84,8 @@ tail -n 200 /opt/msf/logs/mihomo.out.log
 ## #4 MSF 平台日志
 
 ```bash
-tail -n 200 /opt/msf/logs/msf.log
-grep '"level":"error"' /opt/msf/logs/msf.log | tail -n 20
+tail -n 200 $DATA/logs/msf.log
+grep '"level":"error"' $DATA/logs/msf.log | tail -n 20
 ```
 
 JSON 结构，关键字段：`level`、`msg`、`path`、`status`、`latency`、`ip`。
@@ -95,7 +97,7 @@ JSON 结构，关键字段：`level`、`msg`、`path`、`status`、`latency`、`
 MSF 自身不管理日志轮转。长期运行需要外部 `logrotate`，否则小磁盘（如 8GB 虚拟机）可能被打满：
 
 ```
-/opt/msf/logs/*.log {
+$DATA/logs/*.log {
     weekly
     size 50M
     rotate 3

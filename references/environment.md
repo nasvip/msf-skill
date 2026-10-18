@@ -1,5 +1,7 @@
 # 部署形态判定
 
+> 本文中 `$DATA` 指 MSF 数据目录：systemd 为 `/opt/msf`，fnOS 为 `/var/apps/msf/var`，Unraid 为 `/mnt/user/appdata/msf`，macOS 为 `/Library/Application Support/MSF`。
+
 MSF 同一份后端代码支持多种部署形态，**路径、可用能力、升级方式完全不同**。动手前必须先判定，否则会拿到假故障（例如在 Docker 里执行 `nft list table inet msf` 得到空结果，然后误判成"规则丢失"）。
 
 ## 判定顺序
@@ -41,9 +43,9 @@ curl -s http://<host>:7777/api/v1/setup/network-interfaces
 |---|---|---|---|---|---|
 | **Linux systemd** | 无 docker/macos 标志；存在 `msf.service` | `/opt/msf` | 可用 | 支持 | `sudo msf update` |
 | **Docker TUN** | `runtime.docker = true`；或 `/.dockerenv`；或 cgroup 含 docker/containerd/podman/kubepods | 容器内 `/opt/msf`（宿主机映射目录） | **不可用** | **禁用** | 拉新镜像 |
-| **Unraid PLG** | PLG 插件托管 | `/opt/msf` | 可用 | 走插件管理器 | 插件管理器 |
-| **fnOS FPK** | 存在 `/etc/fnos-release`、`/etc/feiniu-release`、`/usr/local/fnos` 或 `/var/packages/msf`；环境变量 `MSF_RUNTIME=fnos/fpk` | `/opt/msf` | 可用 | **禁用** | 飞牛应用中心 / FPK |
-| **macOS** | `runtime.macos = true`；环境变量 `MSF_RUNTIME=macos` | — | **不可用** | — | App 内 |
+| **Unraid PLG** | PLG 插件托管 | `/mnt/user/appdata/msf` | 可用 | 走插件管理器 | 插件管理器 |
+| **fnOS FPK** | 存在 `/etc/fnos-release`、`/etc/feiniu-release`、`/usr/local/fnos` 或 `/var/packages/msf`；环境变量 `MSF_RUNTIME=fnos/fpk` | `/var/apps/msf/var` | 可用 | **禁用** | 飞牛应用中心 / FPK |
+| **macOS** | `runtime.macos = true`；环境变量 `MSF_RUNTIME=macos` | `/Library/Application Support/MSF` | **不可用** | — | App 内 |
 
 环境变量 `MSF_RUNTIME` 的取值会覆盖自动探测：`docker` / `container` 强制按容器处理，其他非空值强制关闭容器判定。
 
@@ -66,7 +68,7 @@ curl -s http://<host>:7777/api/v1/setup/network-interfaces
 ### fnOS / Unraid
 
 - 组件升级走插件管理器，直接跑 `msf update` 会被拒绝或造成状态不一致
-- 数据目录仍是 `/opt/msf`，但重启服务要经插件而非裸 `systemctl`
+- 数据目录不是 `/opt/msf`：fnOS 为 `/var/apps/msf/var`，Unraid 为 `/mnt/user/appdata/msf`；重启服务要经插件而非裸 `systemctl`
 
 ## 数据目录随部署方式变化（不要一律按 `/opt/msf`）
 
@@ -144,6 +146,28 @@ macOS 在 TUN 接管期间额外保存 `configs/network/darwin-state.json`（原
 
 `7877` / `7896` 在 Linux **TUN 模式默认不启用**；**Docker 形态不写 nftables**。
 
+## CLI 命令
+
+MSF 自带 CLI，很多操作比走 API 更直接。多数命令需要 root。
+
+| 命令 | 用途 |
+|---|---|
+| `msf version` | 版本与构建来源（**免 root**） |
+| `sudo msf status` | MSF / systemd / MosDNS / Mihomo 运行状态 |
+| `sudo msf start` | 启动（systemd 存在时走 systemd，不会起第二个进程） |
+| `sudo msf stop [--timeout 30s] [--force]` | 优雅停止并等待子进程退出 |
+| `sudo msf restart` | 重启 |
+| `sudo msf logs [--lines N] [msdns\|mihomo]` | 看日志；服务名可为空（msf 自身） |
+| `sudo msf doctor` | 检查数据目录、组件、常用端口、系统命令 |
+| `sudo msf reset-password [--user NAME]` | 安全重置管理员密码（交互输入，不回显） |
+| `sudo msf update` | 更新（**仅 Linux tarball/systemd**） |
+| `sudo msf uninstall` | 卸载（交互询问是否保留数据） |
+| `msf help` | 中英双语速查 |
+
+**排障第一步建议直接 `sudo msf doctor`**，它会一次性报出数据目录、组件缺失、端口占用与缺失的系统命令，比逐项查快得多。
+
+`msf reset-password` 的密码在终端交互输入，不要通过管道或参数传入——那会留在 shell 历史里。
+
 ## 快速自检
 
 ```bash
@@ -155,7 +179,7 @@ cat /proc/$(pgrep -f 'msf serve' | head -1)/limits | grep 'open files'
 cat /.dockerenv >/dev/null 2>&1 && echo "in container"
 env | grep -E '^MSF_(RUNTIME|DOCKER_NETWORK_MODE)'
 
-# 通用：进程与监听
-msf status
-ss -tulpn | grep -E ':(53|7777|7890|7891|7892|7877|7896|8888|9090|9099)\b'
+# 组装检查
+sudo msf doctor
+ss -tulpn | grep -E ':(53|7777|6666|8888|3333|2222|7877|7896|9099)\b'
 ```

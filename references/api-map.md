@@ -46,7 +46,7 @@ GET /api/v1/monitor/stats
 GET /api/v1/monitor/history
 GET /api/v1/system/diagnostics
 GET /api/v1/system/startup-issues
-GET /api/v1/network/runtime
+GET /api/v1/network/runtime          # 网络接管状态
 GET /api/v1/network/info
 ```
 
@@ -132,13 +132,24 @@ GET /api/v1/history/{id}
 POST /api/v1/services/{name}/restart
 POST /api/v1/daemon/restart
 POST /api/v1/daemon/stop
-POST /api/v1/mihomo/connections/{id}/close
-DELETE /api/v1/mihomo/connections
 POST /api/v1/system/diagnostics/run
-POST /api/v1/mihomo/proxies/{group}/delay      # 触发测速
-POST /api/v1/mihomo/proxy-providers/{name}/update  # 刷新订阅
-POST /api/v1/mosdns/system/cache/clear         # 清缓存
+
+# 网络接管（注意语义差异）
+POST /api/v1/network/runtime/enable     # 启用 TUN/DNS 接管
+POST /api/v1/network/runtime/disable    # 转为直连保活（不拆接管）
+POST /api/v1/network/runtime/restart
+POST /api/v1/network/runtime/stop       # 拆除接管并停止组件
+
+# 连接与测速
+DELETE /api/v1/mihomo/connections
+DELETE /api/v1/mihomo/connections/{id}
+GET  /api/v1/mihomo/proxies/{name}/delay            # 单节点测速
+GET  /api/v1/mihomo/proxy-groups/{name}/delay       # 整组测速
+GET  /api/v1/mihomo/proxy-providers/{provider}/proxies/{proxy}/delay
+POST /api/v1/mihomo/proxy-providers/{name}/update   # 刷新订阅
 ```
+
+`disable` 与 `stop` 的区别很关键：前者保持系统接管、只是不再代理；后者会拆除 nft/TUN 并停止 MosDNS 与 Mihomo。误用 `stop` 等于关掉整个网关。
 
 ## T3 配置变更（需确认 + 差异预览 + 回滚点）
 
@@ -158,7 +169,10 @@ PUT  /api/v1/mihomo/proxy-providers/{name}
 
 ```bash
 POST /api/v1/setup/reset          # 工厂重置
-POST /api/v1/update/apply         # 应用更新
+POST /api/v1/update/check         # 检查更新
+POST /api/v1/update/download
+POST /api/v1/update/install       # 应用更新
+POST /api/v1/update/cancel
 DELETE /api/v1/users/{id}
 POST /api/v1/api-tokens           # 签发新令牌
 ```

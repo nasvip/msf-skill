@@ -1,5 +1,7 @@
 # 故障排查手册
 
+> 本文中 `$DATA` 指 MSF 数据目录：systemd 为 `/opt/msf`，fnOS 为 `/var/apps/msf/var`，Unraid 为 `/mnt/user/appdata/msf`，macOS 为 `/Library/Application Support/MSF`。
+
 每条都按「现象 → 定位 → 处置」。定位阶段全部只读（T1）；处置按层标注。
 
 ---
@@ -106,10 +108,10 @@ sudo msf restart
 curl -s -H "Authorization: Bearer $TOKEN" http://<host>:7777/api/v1/mihomo/proxies
 
 # 订阅缓存文件时间
-ls -l /opt/msf/configs/mihomo/proxy_providers/
+ls -l $DATA/configs/mihomo/proxy_providers/
 
 # 订阅任务日志
-grep -i 'proxy-providers\|subscription' /opt/msf/logs/msf.log | tail -n 20
+grep -i 'proxy-providers\|subscription' $DATA/logs/msf.log | tail -n 20
 ```
 
 **处置**
@@ -135,7 +137,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -x http://<host>:7890 https://www.gstat
 ```bash
 sudo msf stop
 # 仅删缓存，不要删配置与证书
-rm -f /opt/msf/configs/mihomo/cache.db
+rm -f $DATA/configs/mihomo/cache.db
 sudo msf start
 ```
 
@@ -149,7 +151,7 @@ sudo msf start
 
 ```bash
 free -m
-df -h /opt/msf
+df -h "$DATA"
 cat /proc/$(pgrep -f 'msf serve' | head -1)/limits | grep 'open files'
 systemctl show msf -p NRestarts -p ActiveState
 ```
@@ -170,7 +172,7 @@ systemctl show msf -p NRestarts -p ActiveState
 ```bash
 systemctl status msf --no-pager -n 50
 journalctl -u msf -n 200 --no-pager
-grep -i 'startup\|issue\|fatal' /opt/msf/logs/msf.log | tail -n 30
+grep -i 'startup\|issue\|fatal' $DATA/logs/msf.log | tail -n 30
 ```
 
 **要点**

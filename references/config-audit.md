@@ -1,5 +1,7 @@
 # 配置体检
 
+> 本文中 `$DATA` 指 MSF 数据目录：systemd 为 `/opt/msf`，fnOS 为 `/var/apps/msf/var`，Unraid 为 `/mnt/user/appdata/msf`，macOS 为 `/Library/Application Support/MSF`。
+
 目的：判断一套 MSF 配置是否正常、有没有明显可优化项。**输出结论和建议，不擅自修改。**
 
 阈值都带有场景假设（家庭 / 小型局域网、1–2GB 内存）。偏离阈值不等于错误，需结合实际规模判断，并在结论里写明"需现场核实"。
@@ -10,7 +12,7 @@
 
 ```bash
 free -m
-df -h /opt/msf
+df -h "$DATA"
 cat /proc/$(pgrep -f 'msf serve' | head -1)/limits | grep 'open files'
 cat /proc/sys/net/ipv4/ip_forward
 nproc
@@ -20,7 +22,7 @@ nproc
 |---|---|---|
 | `open files` | 等于 `LimitNOFILE`（默认 1048576） | 1024 说明不是 systemd 启动，高并发下会 EMFILE |
 | `ip_forward` | `1` | `0` 则透明代理必然失效 |
-| `/opt/msf` 剩余 | `> 15%` | 低于则需处理日志轮转 |
+| `$DATA` 剩余 | `> 15%` | 低于则需处理日志轮转 |
 | 内存占用 | MosDNS + Mihomo 合计低于总量 50% | 持续接近上限 → 缓存参数过大或内存泄漏 |
 
 **检查 systemd 兜底**：`msf.service` 应有 `ExecStopPost` 在崩溃/被 kill 时清理 nft 与策略路由，否则 MSF 一停，全 LAN 会黑洞。缺失是严重配置缺陷。
@@ -106,8 +108,8 @@ GET /api/v1/mihomo/config
 ### 参数一致性检查（最容易被忽略）
 
 ```bash
-grep -E 'tproxy_port|listen_port|mark' /opt/msf/configs/network/network.yaml
-grep -E 'tproxy-port|redir-port|routing-mark' /opt/msf/configs/mihomo/config.yaml
+grep -E 'tproxy_port|listen_port|mark' $DATA/configs/network/network.yaml
+grep -E 'tproxy-port|redir-port|routing-mark' $DATA/configs/mihomo/config.yaml
 ```
 
 两边不一致 → 流量进得来出不去，症状是"DNS 正常但网页一直转圈"。

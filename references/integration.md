@@ -1,5 +1,7 @@
 # MSF / MosDNS / Mihomo 三方关系
 
+> 本文中 `$DATA` 指 MSF 数据目录：systemd 为 `/opt/msf`，fnOS 为 `/var/apps/msf/var`，Unraid 为 `/mnt/user/appdata/msf`，macOS 为 `/Library/Application Support/MSF`。
+
 这三者不是并列的三个软件，而是**编排者 + DNS 大脑 + 代理执行器**的分工。搞不清这层关系，几乎所有"上不了网"的判断都会跑偏。
 
 ---
@@ -201,7 +203,7 @@ WebUI 的上游列表里可能还留着 `protocol: aliapi`（阿里私享 DoH）
 所以：**在 WebUI 里看到某条上游是"启用"的，不代表它真的在工作。** 判断方法看生成后的配置：
 
 ```bash
-grep -A8 'tag: domestic' /opt/msf/configs/mosdns/sub_config/forward_local.yaml
+grep -A8 'tag: domestic' $DATA/configs/mosdns/sub_config/forward_local.yaml
 ```
 
 只认 `udp://` / `tcp://` / `tls://` / `https://` 前缀。

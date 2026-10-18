@@ -1,5 +1,7 @@
 # T4 危险操作
 
+> 本文中 `$DATA` 指 MSF 数据目录：systemd 为 `/opt/msf`，fnOS 为 `/var/apps/msf/var`，Unraid 为 `/mnt/user/appdata/msf`，macOS 为 `/Library/Application Support/MSF`。
+
 > **本文件仅在用户明确要求执行重置、卸载、升级或切换网络模式时加载。**
 > 不要在其他场景预先加载、预先列出命令，或主动建议这些操作。
 >
@@ -86,7 +88,10 @@ sudo ip route flush table 100
 # Docker 与 fnOS 禁用 msf update
 
 curl -s -H "Authorization: Bearer $TOKEN" http://<host>:7777/api/v1/update/status
-POST /api/v1/update/apply      # 或 sudo msf update
+POST /api/v1/update/check      # 检查
+POST /api/v1/update/download   # 下载
+POST /api/v1/update/install    # 应用
+# 或 CLI（仅 Linux tarball/systemd）：sudo msf update
 ```
 
 风险：
@@ -108,7 +113,7 @@ curl -s -H "Authorization: Bearer $TOKEN" http://<host>:7777/api/v1/system/start
 
 ```bash
 # 当前模式
-grep -E 'mode|proxy_mode' /opt/msf/configs/network/network.yaml
+grep -E 'mode|proxy_mode' $DATA/configs/network/network.yaml
 ```
 
 风险：
@@ -149,10 +154,10 @@ DELETE /api/v1/api-tokens/{id}
 | 文件 | 为什么 |
 |---|---|
 | `/usr/local/bin/msf` | 服务主程序；任何补丁都会破坏版本校验，升级时失败 |
-| `/opt/msf/data/binaries/**` | 受管组件，会被组件更新覆盖 |
-| `/opt/msf/configs/mihomo/config.yaml` | 运行时副本，服务重启后被重新生成覆盖 |
-| `/opt/msf/configs/mosdns/rule/switch*.txt` | 自动生成的开关状态 |
-| `/opt/msf/configs/network/network.nft` | 自动生成的 nft 规则 |
+| `$DATA/data/binaries/**` | 受管组件，会被组件更新覆盖 |
+| `$DATA/configs/mihomo/config.yaml` | 运行时副本，服务重启后被重新生成覆盖 |
+| `$DATA/configs/mosdns/rule/switch*.txt` | 自动生成的开关状态 |
+| `$DATA/configs/network/network.nft` | 自动生成的 nft 规则 |
 
 替代做法：改 `user_configs/*.yaml`、走 WebUI，或调用领域 API。
 
