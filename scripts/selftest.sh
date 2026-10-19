@@ -17,6 +17,10 @@ set -u
 
 SKILL_DIR=$(cd "$(dirname "$0")/.." && pwd)
 PROFILE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/msf-skill"
+# 与 CI 用同一套解析逻辑，避免两边算法不同互相掩盖问题
+PYBIN=""
+command -v python3 >/dev/null 2>&1 && PYBIN=python3
+[ -z "$PYBIN" ] && command -v python >/dev/null 2>&1 && PYBIN=python
 HOST=""
 PROFILE="default"
 LOCAL_ONLY=0
@@ -79,15 +83,32 @@ if [ -f "$SKILL_MD" ]; then
     bad "frontmatter 缺少 name 或格式不对" "应为 name: <kebab-case>"
   fi
 
-  DESC_LEN=$(awk '
-    /^description:/ {
-      line=$0
-      if (line ~ />-?[[:space:]]*$/ || line ~ /\|[[:space:]]*$/) { pend=1; next }
-      sub(/^description:[[:space:]]*/,"",line); print line; exit
-    }
-    pend && /^[[:space:]]+/ { sub(/^[[:space:]]+/,""); printf "%s ", $0; next }
-    pend && /^[^[:space:]]/ { exit }
-  ' "$SKILL_MD" | wc -m | tr -d ' ')
+  if [ -n "$PYBIN" ]; then
+    DESC_LEN=$("$PYBIN" - "$SKILL_MD" <<'PY' 2>/dev/null
+import re, sys, pathlib
+t = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+m = re.match(r"^---\r?\n(.*?)\r?\n---\r?\n", t, re.S)
+fm = m.group(1) if m else ""
+dm = re.search(r"^description:\s*(>-?|\|)\s*\n((?:[ \t]+.*\n)+)", fm, re.M)
+if dm:
+    d = " ".join(l.strip() for l in dm.group(2).splitlines()).strip()
+else:
+    dm = re.search(r"^description:\s*(.+)$", fm, re.M)
+    d = dm.group(1).strip() if dm else ""
+print(len(d))
+PY
+)
+  else
+    DESC_LEN=$(awk '
+      /^description:/ {
+        line=$0
+        if (line ~ />-?[[:space:]]*$/ || line ~ /\|[[:space:]]*$/) { pend=1; next }
+        sub(/^description:[[:space:]]*/,"",line); print line; exit
+      }
+      pend && /^[[:space:]]+/ { sub(/^[[:space:]]+/,""); printf "%s ", $0; next }
+      pend && /^[^[:space:]]/ { exit }
+    ' "$SKILL_MD" | wc -m | tr -d ' ')
+  fi
   if [ "${DESC_LEN:-0}" -ge 1 ] && [ "${DESC_LEN:-0}" -le 1024 ]; then
     ok "description 长度 ${DESC_LEN} 字符（上限 1024）"
   else
@@ -157,8 +178,8 @@ PF="$PROFILE_DIR/profile.json"
 SSH_USER=""; SSH_KEY=""; DATA_DIR=""; DEPLOY=""
 if [ -f "$PF" ]; then
   ok "profile 存在：$PF"
-  if command -v python3 >/dev/null 2>&1; then
-    eval "$(python3 - "$PF" <<'PY'
+  if [ -n "$PYBIN" ]; then
+    eval "$("$PYBIN" - "$PF" <<'PY'
 import json,sys,shlex
 d=json.load(open(sys.argv[1]))
 def g(k):

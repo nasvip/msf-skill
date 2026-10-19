@@ -256,7 +256,7 @@ MosDNS 日志里 `sub.info.node.` 出现 173 次 `transport has been closed`，�
   type: ss
   server: sub.info.node          # ← 不存在的占位域名
   port: 443
-  password: SubInfoNode
+  password: <占位字符串>          # ← 机场填的固定标记，非真实凭据
   cipher: aes-128-gcm
 - name: "⌛剩余流量 187.71GB"
   server: sub.info.node          # ← 同上
